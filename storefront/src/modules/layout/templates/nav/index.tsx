@@ -48,6 +48,13 @@ export default async function Nav() {
               >
                 Account
               </LocalizedClientLink>
+              <LocalizedClientLink
+                className="hover:text-ui-fg-base"
+                href="/personalize-yourbrickz"
+                data-testid="nav-personalize-link"
+              >
+                Personalize Yourbrickz
+              </LocalizedClientLink>
             </div>
             <Suspense
               fallback={
