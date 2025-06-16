@@ -457,18 +457,21 @@ export default function PersonalizeYourbrickzPage() {
     e.preventDefault()
     
     const rect = gridContainerRef.current?.getBoundingClientRect()
-    if (!rect) return
+    if (!rect || !mosaicData.length || imageAspectRatio === 0) return
     
     // Calculate minimum zoom to fit entire image
     const containerWidth = rect.width - 48 // Account for padding
     const containerHeight = rect.height - 48
+    
+    if (containerWidth <= 0 || containerHeight <= 0) return // Prevent division by zero
+    
     const imageWidth = isMobile 
       ? Math.min(containerWidth, 800)
       : Math.min(containerWidth, 1400)
-    const imageHeight = imageWidth / imageAspectRatio
+    const imageHeight = imageWidth / Math.max(imageAspectRatio, 0.1) // Prevent division by zero
     
-    const minZoomX = containerWidth / imageWidth
-    const minZoomY = containerHeight / imageHeight
+    const minZoomX = containerWidth / Math.max(imageWidth, 1)
+    const minZoomY = containerHeight / Math.max(imageHeight, 1)
     const minZoom = Math.min(minZoomX, minZoomY, 1.0) // Don't go above 1.0 as minimum
     
     // Get mouse position relative to the container
@@ -476,15 +479,16 @@ export default function PersonalizeYourbrickzPage() {
     const mouseY = e.clientY - rect.top
     
     // Convert mouse position to grid coordinates considering current zoom and pan
-    const gridX = (mouseX - rect.width / 2 - pan.x) / zoom
-    const gridY = (mouseY - rect.height / 2 - pan.y) / zoom
+    const currentZoom = Math.max(zoom, 0.1) // Prevent division by zero
+    const gridX = (mouseX - rect.width / 2 - pan.x) / currentZoom
+    const gridY = (mouseY - rect.height / 2 - pan.y) / currentZoom
     
-    const delta = e.deltaY * -0.01
+    const delta = Math.max(-0.5, Math.min(0.5, e.deltaY * -0.01)) // Clamp delta
     // Limit zoom out to minZoom and zoom in to 4.0
-    const newZoom = Math.min(Math.max(minZoom, zoom + delta), 4)
+    const newZoom = Math.min(Math.max(minZoom, currentZoom + delta), 4)
     
     // If we're at minimum zoom, center the image
-    if (newZoom === minZoom) {
+    if (newZoom <= minZoom * 1.01) { // Small tolerance
       setPan({ x: 0, y: 0 })
       setZoom(newZoom)
     } else {
@@ -492,7 +496,12 @@ export default function PersonalizeYourbrickzPage() {
       const newPanX = mouseX - rect.width / 2 - gridX * newZoom
       const newPanY = mouseY - rect.height / 2 - gridY * newZoom
       
-      setPan({ x: newPanX, y: newPanY })
+      // Clamp pan values to reasonable bounds
+      const maxPan = Math.max(imageWidth, imageHeight) * newZoom
+      const clampedPanX = Math.max(-maxPan, Math.min(maxPan, newPanX))
+      const clampedPanY = Math.max(-maxPan, Math.min(maxPan, newPanY))
+      
+      setPan({ x: clampedPanX, y: clampedPanY })
       setZoom(newZoom)
     }
   }
@@ -510,9 +519,14 @@ export default function PersonalizeYourbrickzPage() {
       e.preventDefault()
       const deltaX = e.clientX - lastPanPoint.x
       const deltaY = e.clientY - lastPanPoint.y
+      
+      // Clamp movement deltas
+      const clampedDeltaX = Math.max(-100, Math.min(100, deltaX))
+      const clampedDeltaY = Math.max(-100, Math.min(100, deltaY))
+      
       setPan(prev => ({
-        x: prev.x + deltaX,
-        y: prev.y + deltaY
+        x: prev.x + clampedDeltaX,
+        y: prev.y + clampedDeltaY
       }))
       setLastPanPoint({ x: e.clientX, y: e.clientY })
     }
@@ -529,12 +543,16 @@ export default function PersonalizeYourbrickzPage() {
       setIsPanning(true)
       const touch1 = e.touches[0]
       const touch2 = e.touches[1]
-      const centerX = (touch1.clientX + touch2.clientX) / 2
-      const centerY = (touch1.clientY + touch2.clientY) / 2
-      setLastPanPoint({ x: centerX, y: centerY })
+      if (touch1 && touch2) {
+        const centerX = (touch1.clientX + touch2.clientX) / 2
+        const centerY = (touch1.clientY + touch2.clientY) / 2
+        setLastPanPoint({ x: centerX, y: centerY })
+      }
     } else if (e.touches.length === 1) {
       const touch = e.touches[0]
-      setLastPanPoint({ x: touch.clientX, y: touch.clientY })
+      if (touch) {
+        setLastPanPoint({ x: touch.clientX, y: touch.clientY })
+      }
     }
   }
 
@@ -544,26 +562,33 @@ export default function PersonalizeYourbrickzPage() {
       const touch1 = e.touches[0]
       const touch2 = e.touches[1]
       
-      // Calculate zoom based on distance between fingers
-      const distance = Math.sqrt(
-        Math.pow(touch2.clientX - touch1.clientX, 2) + 
-        Math.pow(touch2.clientY - touch1.clientY, 2)
-      )
-      
-      // Pan based on center point movement
-      const centerX = (touch1.clientX + touch2.clientX) / 2
-      const centerY = (touch1.clientY + touch2.clientY) / 2
-      
-      if (isPanning) {
-        const deltaX = centerX - lastPanPoint.x
-        const deltaY = centerY - lastPanPoint.y
-        setPan(prev => ({
-          x: prev.x + deltaX,
-          y: prev.y + deltaY
-        }))
+      if (touch1 && touch2) {
+        // Calculate zoom based on distance between fingers
+        const distance = Math.sqrt(
+          Math.pow(touch2.clientX - touch1.clientX, 2) + 
+          Math.pow(touch2.clientY - touch1.clientY, 2)
+        )
+        
+        // Pan based on center point movement
+        const centerX = (touch1.clientX + touch2.clientX) / 2
+        const centerY = (touch1.clientY + touch2.clientY) / 2
+        
+        if (isPanning) {
+          const deltaX = centerX - lastPanPoint.x
+          const deltaY = centerY - lastPanPoint.y
+          
+          // Clamp movement deltas
+          const clampedDeltaX = Math.max(-100, Math.min(100, deltaX))
+          const clampedDeltaY = Math.max(-100, Math.min(100, deltaY))
+          
+          setPan(prev => ({
+            x: prev.x + clampedDeltaX,
+            y: prev.y + clampedDeltaY
+          }))
+        }
+        
+        setLastPanPoint({ x: centerX, y: centerY })
       }
-      
-      setLastPanPoint({ x: centerX, y: centerY })
     }
   }
 
@@ -576,19 +601,24 @@ export default function PersonalizeYourbrickzPage() {
   const resetZoomAndPan = () => {
     // Calculate minimum zoom to fit entire image
     const rect = gridContainerRef.current?.getBoundingClientRect()
-    if (rect) {
+    if (rect && imageAspectRatio > 0) {
       const containerWidth = rect.width - 48
       const containerHeight = rect.height - 48
-      const imageWidth = isMobile 
-        ? Math.min(containerWidth, 800)
-        : Math.min(containerWidth, 1400)
-      const imageHeight = imageWidth / imageAspectRatio
       
-      const minZoomX = containerWidth / imageWidth
-      const minZoomY = containerHeight / imageHeight
-      const minZoom = Math.min(minZoomX, minZoomY, 1.0)
-      
-      setZoom(minZoom)
+      if (containerWidth > 0 && containerHeight > 0) {
+        const imageWidth = isMobile 
+          ? Math.min(containerWidth, 800)
+          : Math.min(containerWidth, 1400)
+        const imageHeight = imageWidth / imageAspectRatio
+        
+        const minZoomX = containerWidth / Math.max(imageWidth, 1)
+        const minZoomY = containerHeight / Math.max(imageHeight, 1)
+        const minZoom = Math.min(minZoomX, minZoomY, 1.0)
+        
+        setZoom(minZoom)
+      } else {
+        setZoom(1)
+      }
     } else {
       setZoom(1)
     }
@@ -670,6 +700,17 @@ export default function PersonalizeYourbrickzPage() {
     } else {
       setSelectedBottomBox(index);
       setShowAdjustmentMenu(false);
+    }
+
+    // Mobile mode switching logic
+    if (isMobile) {
+      if (index === 3) {
+        // Paint icon clicked - switch to paint mode
+        setIsPaintMode(true);
+      } else {
+        // Any other icon clicked - switch to move mode
+        setIsPaintMode(false);
+      }
     }
   };
 
@@ -1092,21 +1133,24 @@ export default function PersonalizeYourbrickzPage() {
                   const rect = gridContainerRef.current?.getBoundingClientRect()
                   let minZoom = 1.0
                   
-                  if (rect) {
+                  if (rect && imageAspectRatio > 0) {
                     const containerWidth = rect.width - 48
                     const containerHeight = rect.height - 48
-                    const imageWidth = isMobile 
-                      ? Math.min(containerWidth, 800)
-                      : Math.min(containerWidth, 1400)
-                    const imageHeight = imageWidth / imageAspectRatio
                     
-                    const minZoomX = containerWidth / imageWidth
-                    const minZoomY = containerHeight / imageHeight
-                    minZoom = Math.min(minZoomX, minZoomY, 1.0)
+                    if (containerWidth > 0 && containerHeight > 0) {
+                      const imageWidth = isMobile 
+                        ? Math.min(containerWidth, 800)
+                        : Math.min(containerWidth, 1400)
+                      const imageHeight = imageWidth / imageAspectRatio
+                      
+                      const minZoomX = containerWidth / Math.max(imageWidth, 1)
+                      const minZoomY = containerHeight / Math.max(imageHeight, 1)
+                      minZoom = Math.min(minZoomX, minZoomY, 1.0)
+                    }
                   }
                   
-                  const newZoom = Math.max(zoom - 0.2, minZoom)
-                  if (newZoom === minZoom) {
+                  const newZoom = Math.max(Math.max(zoom - 0.2, minZoom), 0.1)
+                  if (newZoom <= minZoom * 1.01) {
                     setPan({ x: 0, y: 0 })
                   }
                   setZoom(newZoom)
@@ -1188,8 +1232,8 @@ export default function PersonalizeYourbrickzPage() {
           </div>
         </div>
 
-        {/* Two fixed lines at the bottom - only show in editor */}
-        {isBrickzMeClicked && (
+        {/* Two fixed lines at the bottom - only show in editor AND only on mobile */}
+        {isBrickzMeClicked && isMobile && (
           <div className="fixed bottom-0 left-0 right-0 z-50">
             {/* Second row - show for different buttons with different heights */}
             {(selectedBottomBox === 0 || selectedBottomBox === 1 || selectedBottomBox === 2 || selectedBottomBox === 3 || selectedBottomBox === 4) && (
@@ -1433,8 +1477,8 @@ export default function PersonalizeYourbrickzPage() {
         )
       )}
 
-      {/* Two fixed lines at the bottom - only show in editor */}
-      {isBrickzMeClicked && (
+      {/* Two fixed lines at the bottom - only show in editor AND only on mobile */}
+      {isBrickzMeClicked && isMobile && (
         <div className="fixed bottom-0 left-0 right-0 z-50">
           {/* Second row - show for different buttons with different heights */}
           {(selectedBottomBox === 0 || selectedBottomBox === 1 || selectedBottomBox === 2 || selectedBottomBox === 3 || selectedBottomBox === 4) && (
