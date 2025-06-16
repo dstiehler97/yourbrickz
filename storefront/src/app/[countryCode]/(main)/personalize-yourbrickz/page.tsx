@@ -46,6 +46,7 @@ export default function PersonalizeYourbrickzPage() {
   const [selectedBottomBox, setSelectedBottomBox] = useState(0); // Add state for selected box (0-4)
   const [currentAdjustmentType, setCurrentAdjustmentType] = useState<'brightness' | 'contrast' | 'saturation' | 'sharpness'>('brightness');
   const [showAdjustmentMenu, setShowAdjustmentMenu] = useState(false);
+  const [isAddingToCart, setIsAddingToCart] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const gridContainerRef = useRef<HTMLDivElement>(null);
   const router = useRouter(); // Router-Instanz für Navigation
@@ -748,6 +749,190 @@ export default function PersonalizeYourbrickzPage() {
     return 'XXL';
   };
 
+  // Generate comprehensive product data for seller
+  const generateProductData = () => {
+    if (!mosaicData.length) return null;
+
+    // Count colors used in mosaic
+    const colorCount = new Map<string, { count: number; name: string; yourbrickz_id: string }>();
+    let totalBricks = 0;
+
+    // Count each color usage
+    mosaicData.forEach(row => {
+      row.forEach(color => {
+        if (color !== "F") { // Ignore frame markers
+          totalBricks++;
+          const colorInfo = yourbrickzColors.find(c => c.hex === color);
+          if (colorInfo) {
+            const existing = colorCount.get(color) || { count: 0, name: colorInfo.name, yourbrickz_id: colorInfo.yourbrickz_id };
+            colorCount.set(color, {
+              ...existing,
+              count: existing.count + 1
+            });
+          }
+        }
+      });
+    });
+
+    // Calculate baseplates (16x16 = 256 bricks each)
+    const totalBaseplates = Math.ceil(totalBricks / 256);
+    const baseplateRows = Math.ceil(mosaicDimensions.height / 16);
+    const baseplateCols = Math.ceil(mosaicDimensions.width / 16);
+
+    // Convert color count to array for JSON
+    const colorArray = Array.from(colorCount.entries()).map(([hex, data]) => ({
+      hex,
+      name: data.name,
+      yourbrickz_id: data.yourbrickz_id,
+      count: data.count,
+      percentage: ((data.count / totalBricks) * 100).toFixed(2)
+    }));
+
+    // Sort by usage count (most used first)
+    colorArray.sort((a, b) => b.count - a.count);
+
+    return {
+      mosaic: {
+        dimensions: {
+          width: mosaicDimensions.width,
+          height: mosaicDimensions.height,
+          aspectRatio: imageAspectRatio
+        },
+        baseplates: {
+          total: totalBaseplates,
+          rows: baseplateRows,
+          cols: baseplateCols,
+          dimensions: `${baseplateCols}x${baseplateRows}`
+        },
+        bricks: {
+          total: totalBricks,
+          uniqueColors: colorArray.length
+        },
+        settings: {
+          hasBorder: showBorder,
+          size: mosaicSize,
+          sizeLabel: getSizeLabel(mosaicSize)
+        },
+        adjustments: {
+          brightness,
+          contrast,
+          saturation,
+          sharpness
+        }
+      },
+      colors: colorArray,
+      pricing: {
+        totalPrice: calculatePrice(),
+        currency: "EUR"
+      },
+      metadata: {
+        createdAt: new Date().toISOString(),
+        version: "1.0"
+      }
+    };
+  };
+
+  // Generate mosaic image as base64 for product image
+  const generateMosaicImage = (): Promise<string> => {
+    return new Promise((resolve) => {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      
+      if (!ctx || !mosaicData.length) {
+        resolve('');
+        return;
+      }
+
+      // Set canvas size (higher resolution for better quality)
+      const pixelSize = 20; // Each brick is 20x20 pixels
+      canvas.width = mosaicDimensions.width * pixelSize;
+      canvas.height = mosaicDimensions.height * pixelSize;
+
+      // Draw each brick
+      mosaicData.forEach((row, rowIndex) => {
+        row.forEach((color, colIndex) => {
+          const x = colIndex * pixelSize;
+          const y = rowIndex * pixelSize;
+          
+          if (color === "F") {
+            // Frame - draw as transparent or light gray
+            ctx.fillStyle = showBorder ? '#e5e5e5' : 'transparent';
+          } else {
+            ctx.fillStyle = color;
+          }
+          
+          ctx.fillRect(x, y, pixelSize, pixelSize);
+          
+          // Add brick effect (subtle border)
+          if (color !== "F") {
+            ctx.strokeStyle = 'rgba(0,0,0,0.1)';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(x, y, pixelSize, pixelSize);
+          }
+        });
+      });
+
+      // Convert to base64
+      const base64Image = canvas.toDataURL('image/png', 0.9);
+      resolve(base64Image);
+    });
+  };
+
+  // Add to cart function for Medusa v2
+  const handleAddToCart = async () => {
+    if (!mosaicData.length || isAddingToCart) return;
+
+    setIsAddingToCart(true);
+
+    try {
+      // Generate product data
+      const productData = generateProductData();
+      const mosaicImage = await generateMosaicImage();
+
+      if (!productData) {
+        throw new Error('Could not generate product data');
+      }
+
+      // Prepare cart item for Medusa v2
+      const cartItem = {
+        variant_id: "yourbrickz-custom-mosaic", // You'll need to create this variant in Medusa
+        quantity: 1,
+        metadata: {
+          // Store all the detailed information as metadata
+          mosaic_data: JSON.stringify(productData),
+          mosaic_image: mosaicImage,
+          custom_product: true,
+          product_type: "custom_mosaic"
+        }
+      };
+
+      // Add to Medusa cart
+      const response = await fetch('/api/cart/add', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(cartItem)
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to add item to cart');
+      }
+
+      // Show success message
+      alert('Ihr personalisiertes yourbrickz Mosaik wurde erfolgreich zum Warenkorb hinzugefügt!');
+      
+      // Optional: Redirect to cart
+      // router.push('/cart');
+
+    } catch (error) {
+      console.error('Error adding to cart:', error);
+      alert('Fehler beim Hinzufügen zum Warenkorb. Bitte versuchen Sie es erneut.');
+    } finally {
+      setIsAddingToCart(false);
+    }
+  };
+
   if (isBrickzMeClicked) {
     return (
       <div className="min-h-screen bg-gray-100 flex flex-col lg:flex-row pb-[100px]">
@@ -1086,6 +1271,31 @@ export default function PersonalizeYourbrickzPage() {
                   </span>
                 </div>
               </div>
+              
+              {/* Add to Cart Button */}
+              <button
+                onClick={handleAddToCart}
+                disabled={isAddingToCart || !mosaicData.length}
+                className={`w-full mt-4 py-3 px-4 rounded-lg font-semibold text-white transition-all ${
+                  isAddingToCart || !mosaicData.length
+                    ? 'bg-gray-400 cursor-not-allowed'
+                    : 'bg-green-600 hover:bg-green-700 active:bg-green-800'
+                }`}
+              >
+                {isAddingToCart ? (
+                  <div className="flex items-center justify-center gap-2">
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    Wird hinzugefügt...
+                  </div>
+                ) : (
+                  'In den Warenkorb'
+                )}
+              </button>
+              
+              {/* Additional info */}
+              <p className="text-xs text-gray-500 mt-2 text-center">
+                Individuell für Sie erstellt
+              </p>
             </div>
           </div>
         </div>
@@ -1551,6 +1761,7 @@ export default function PersonalizeYourbrickzPage() {
                           className="py-2 px-3 bg-gray-100 hover:bg-gray-200 rounded text-sm font-medium transition-colors"
                         >
                           Kontrast
+                       
                         </button>
                         <button
                           onClick={() => handleAdjustmentSelection('saturation')}
