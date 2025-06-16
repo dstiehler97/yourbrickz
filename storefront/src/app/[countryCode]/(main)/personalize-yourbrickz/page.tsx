@@ -539,7 +539,7 @@ export default function PersonalizeYourbrickzPage() {
   // Touch handlers for mobile
   const handleTouchStart = (e: React.TouchEvent) => {
     if (e.touches.length === 2) {
-      e.preventDefault()
+      // Remove preventDefault() to avoid passive event listener warning
       setIsPanning(true)
       const touch1 = e.touches[0]
       const touch2 = e.touches[1]
@@ -558,7 +558,7 @@ export default function PersonalizeYourbrickzPage() {
 
   const handleTouchMove = (e: React.TouchEvent) => {
     if (e.touches.length === 2) {
-      e.preventDefault()
+      // Remove preventDefault() to avoid passive event listener warning
       const touch1 = e.touches[0]
       const touch2 = e.touches[1]
       
@@ -1109,7 +1109,8 @@ export default function PersonalizeYourbrickzPage() {
               maxWidth: isMobile ? "calc(100vw - 40px)" : "calc(100vw - 400px)", // Updated: only account for left sidebar
               maxHeight: "calc(100vh - 180px)",
               margin: "0 auto",
-              cursor: isPanning ? 'grabbing' : (!isPaintMode ? 'grab' : (zoom > 1 ? 'grab' : 'default'))
+              cursor: isPanning ? 'grabbing' : (!isPaintMode ? 'grab' : (zoom > 1 ? 'grab' : 'default')),
+              touchAction: 'none' // Add this to prevent default touch behaviors
             }}
             onWheel={handleWheel}
             onMouseDown={handlePanStart}
@@ -1183,7 +1184,8 @@ export default function PersonalizeYourbrickzPage() {
                 minHeight: "300px",
                 transform: `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`,
                 transformOrigin: "center",
-                transition: isPanning ? "none" : "transform 0.1s ease-out"
+                transition: isPanning ? "none" : "transform 0.1s ease-out",
+                touchAction: 'none' // Add this to prevent default touch behaviors on the grid
               }}
               onMouseDown={handleMouseDown}
               onMouseUp={handleMouseUp}
