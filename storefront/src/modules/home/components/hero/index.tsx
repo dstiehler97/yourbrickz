@@ -3,29 +3,28 @@ import { Button, Heading } from "@medusajs/ui"
 
 const Hero = () => {
   return (
-    <div className="h-[75vh] w-full border-b border-ui-border-base relative bg-ui-bg-subtle">
-      <div className="absolute inset-0 z-10 flex flex-col justify-center items-center text-center small:p-32 gap-6">
-        <span>
-          <Heading
-            level="h1"
-            className="text-3xl leading-10 text-ui-fg-base font-normal"
-          >
-            Well done! You have successfully deployed your Medusa 2.0 store on Railway!
-          </Heading>
-          <Heading
-            level="h2"
-            className="text-3xl leading-10 text-ui-fg-subtle font-normal"
-          >
-            Need help customizing your store?
-          </Heading>
-        </span>
+    <div className="relative h-[90vh] w-full overflow-hidden bg-black text-white">
+      {/* Hintergrundbild als PNG */}
+      <img
+        src="/images/hero-mosaic.png"
+        alt="yourbrickz Mosaik aus runden Steinen"
+        className="absolute inset-0 w-full h-full object-cover opacity-30"
+      />
+
+      {/* Text-Overlay */}
+      <div className="relative z-10 flex flex-col items-center justify-center h-full text-center px-6 gap-6">
+        <h1 className="text-4xl md:text-6xl font-bold leading-tight">
+          Dein Foto als Mosaik-Bausatz
+        </h1>
+        <h2 className="text-xl md:text-2xl font-light">
+          Runde Steine. Klare Struktur. Individuell gefertigt.
+        </h2>
+
         <a
-          href="https://funkyton.com/medusajs-2-0-is-finally-here/"
-          target="_blank"
+          href="/de/personalize-yourbrickz"
+          className="bg-white text-black px-8 py-3 rounded-full text-lg font-semibold hover:bg-gray-100 transition"
         >
-          <h1 style={{ textDecoration: "underline" }}>
-            Visit the tutorial
-          </h1>
+          Jetzt starten
         </a>
       </div>
     </div>
