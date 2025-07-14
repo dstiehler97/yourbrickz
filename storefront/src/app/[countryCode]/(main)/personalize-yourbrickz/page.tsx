@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation"; // Für die Navigation zu einer neuen Seite
-// → Typen importieren, falls du sie hast
-// import type { StoreProduct } from "@medusajs/medusa";
+import { addToCart, retrieveCart } from "@lib/data/cart";
+import { fetchProduct } from "@lib/data/product";
 
 // oberhalb von `export default …`
 type YourbrickzColor = { id: string; yourbrickz_id: string; name: string; hex: string; rgb: number[] };
@@ -18,9 +18,6 @@ const COLOR_DISPLAY_ORDER = [
 ];
 
 export default function PersonalizeYourbrickzPage() {
-  // → STATE: Die automatisch geladene Variant-ID
-  const [variantId, setVariantId] = useState<string>("");
-
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [randomImages, setRandomImages] = useState<string[]>([]);
   const [allImages, setAllImages] = useState<string[]>([]);
@@ -60,17 +57,19 @@ export default function PersonalizeYourbrickzPage() {
   const getSortedColors = () => {
     if (mosaicData.length === 0) {
       // If no mosaic data, use default order
-      const colorMap = new Map(yourbrickzColors.map(color => [parseInt(color.id), color]));
+      const colorMap = new Map(
+        yourbrickzColors.map((color: YourbrickzColor) => [parseInt(color.id), color])
+      );
       return COLOR_DISPLAY_ORDER
-        .map(id => colorMap.get(id))
-        .filter(color => color !== undefined) as YourbrickzColor[];
+        .map((id) => colorMap.get(id))
+        .filter((color): color is YourbrickzColor => color !== undefined);
     }
 
     // Count color usage in mosaic
     const colorUsage = new Map<string, number>();
-    mosaicData.forEach(row => {
-      row.forEach(color => {
-        if (color !== "F") { // Ignore frame markers
+    mosaicData.forEach((row: string[]) => {
+      row.forEach((color: string) => {
+        if (color !== "F") {
           colorUsage.set(color, (colorUsage.get(color) || 0) + 1);
         }
       });
@@ -80,7 +79,7 @@ export default function PersonalizeYourbrickzPage() {
     const usedColors: YourbrickzColor[] = [];
     const unusedColors: YourbrickzColor[] = [];
 
-    yourbrickzColors.forEach(color => {
+    yourbrickzColors.forEach((color: YourbrickzColor) => {
       if (colorUsage.has(color.hex)) {
         usedColors.push(color);
       } else {
@@ -92,10 +91,12 @@ export default function PersonalizeYourbrickzPage() {
     usedColors.sort((a, b) => (colorUsage.get(b.hex) || 0) - (colorUsage.get(a.hex) || 0));
 
     // Sort unused colors by custom order
-    const colorMap = new Map(yourbrickzColors.map(color => [parseInt(color.id), color]));
+    const colorMap = new Map(
+      yourbrickzColors.map((color: YourbrickzColor) => [parseInt(color.id), color])
+    );
     const sortedUnusedColors = COLOR_DISPLAY_ORDER
-      .map(id => colorMap.get(id))
-      .filter(color => color !== undefined && !colorUsage.has(color.hex)) as YourbrickzColor[];
+      .map((id) => colorMap.get(id))
+      .filter((color): color is YourbrickzColor => color !== undefined && !colorUsage.has(color.hex));
 
     // Return used colors first, then unused colors
     return [...usedColors, ...sortedUnusedColors];
@@ -134,47 +135,6 @@ export default function PersonalizeYourbrickzPage() {
     window.addEventListener("resize", handleResize);
 
     return () => window.removeEventListener("resize", handleResize); // Cleanup
-  }, []);
-
-  // ──────────────────────────────────────────────────────────
-  // 1) Produkt & Default-Variante aus der Store-API laden
-  useEffect(() => {
-    const loadProduct = async () => {
-      try {
-        // Verwende die tatsächliche Produkt-ID aus dem Screenshot
-        const res = await fetch("/store/products/prod_01JEKTFQ588ZZT2HTM8WPY7CET");
-        if (!res.ok) {
-          console.warn("Produkt nicht gefunden, versuche mit Handle...");
-          // Fallback: versuche mit Handle
-          const handleRes = await fetch("/store/products/personalize-yourbrickz");
-          if (!handleRes.ok) {
-            console.error("Produkt auch mit Handle nicht gefunden");
-            setVariantId("variant_prod_01JEKTFQ58ZZT2HTM8WPY7CET"); // Direkte Variante-ID aus Screenshot
-            return;
-          }
-          const { product: handleProduct } = await handleRes.json();
-          if (handleProduct.variants?.length) {
-            setVariantId(handleProduct.variants[0].id);
-            console.log("Produkt über Handle geladen, Variante-ID:", handleProduct.variants[0].id);
-          }
-          return;
-        }
-        const { product } = await res.json();
-        // Wir nehmen die erste Variante
-        if (product.variants?.length) {
-          setVariantId(product.variants[0].id);
-          console.log("Produkt geladen, Variante-ID:", product.variants[0].id);
-        } else {
-          // Fallback zur bekannten Variante-ID
-          setVariantId("variant_prod_01JEKTFQ58ZZT2HTM8WPY7CET");
-        }
-      } catch (error) {
-        console.error("Fehler beim Laden des Produkts:", error);
-        // Fallback zur bekannten Variante-ID aus dem Screenshot
-        setVariantId("variant_prod_01JEKTFQ58ZZT2HTM8WPY7CET");
-      }
-    };
-    loadProduct();
   }, []);
 
   useEffect(() => {
@@ -924,115 +884,50 @@ export default function PersonalizeYourbrickzPage() {
     };
   };
 
-  // ──────────────────────────────────────────────────────────
-  // Hilfsfunktion: zählt jede Farbe im Mosaik
-  const getColorUsageMap = (mosaic: string[][]): Record<string, number> => {
-    const usage: Record<string, number> = {};
-    mosaic.forEach(row =>
-      row.forEach(color => {
-        if (color !== "F") {
-          usage[color] = (usage[color] || 0) + 1;
-        }
-      })
-    );
-    return usage;
-  };
-
-  // ──────────────────────────────────────────────────────────
-  // addToCart-Funktion
+  // Add to cart function for Medusa v2
   const handleAddToCart = async () => {
-    if (!variantId) {
-      alert("Warte kurz, lade Variante… Oder erstelle zuerst das Produkt 'personalize-yourbrickz' in Medusa Admin.");
+    const cart = await retrieveCart();
+    const product = { variants: [] }; // Replace with actual product fetching logic
+
+    if (!cart?.id || !product) {
+      alert("Cart or product not found.");
       return;
     }
-    if (!mosaicData.length || isAddingToCart) return;
 
-    setIsAddingToCart(true);
+    const { width, height } = mosaicDimensions;
+    const platesX = Math.ceil(width / 16);
+    const platesY = Math.ceil(height / 16);
+    const totalBaseplates = platesX * platesY;
 
-    try {
-      // 1) Warenkorb-ID holen/initialisieren
-      let cartId = localStorage.getItem("yourbrickz_cart_id");
-      if (!cartId) {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL}/store/carts`, { method: "POST" });
-        if (!res.ok) {
-          throw new Error("Konnte keinen Warenkorb erstellen");
-        }
-        const { cart } = await res.json();
-        cartId = cart.id;
-        localStorage.setItem("yourbrickz_cart_id", cart.id);
-      }
-
-      // 2) Mosaik-Metriken berechnen
-      const bricks = mosaicDimensions.width * mosaicDimensions.height;
-      const baseplates = Math.ceil(bricks / 256); // Anzahl der Grundplatten
-      const priceCts = Math.round(calculatePrice() * 100);
-      const colorUsage = getColorUsageMap(mosaicData);
-
-      // Dynamische Auswahl der Option basierend auf der Anzahl der Grundplatten
-      const selectedOptionValue = baseplates.toString(); // Option-Wert entspricht der Anzahl der Grundplatten
-      const selectedOption = yourbrickzPrices.options.find(
-        (option: any) => option.values.some((value: any) => value.value === selectedOptionValue)
-      );
-
-      if (!selectedOption) {
-        throw new Error(`Keine passende Option für ${baseplates} Grundplatten gefunden.`);
-      }
-
-      const selectedOptionId = selectedOption.id;
-
-      // 3) Metadaten zusammenstellen (alle Werte als Strings)
-      const metadata = {
-        image_url: selectedImage || "",
-        width: String(mosaicDimensions.width),
-        height: String(mosaicDimensions.height),
-        baseplates: String(baseplates),
-        frame: String(showBorder),
-        circles_count: String(bricks),
-        color_usage: JSON.stringify(colorUsage),
-        mosaic_matrix: JSON.stringify(mosaicData),
-      };
-
-      console.log("Versuche Artikel hinzuzufügen:", {
-        variant_id: variantId,
-        quantity: 1,
-        unit_price: priceCts,
-        metadata,
-        selected_option_id: selectedOptionId,
-      });
-
-      // 4) API-Call: Linie zum Warenkorb hinzufügen
-      const resp = await fetch(`${process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL}/store/carts/${cartId}/line-items`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          variant_id: variantId,
-          quantity: 1,
-          unit_price: priceCts,
-          metadata,
-          selected_option_id: selectedOptionId,
-        }),
-      });
-
-      if (!resp.ok) {
-        const errorText = await resp.text();
-        console.error("Fehler beim Hinzufügen:", errorText);
-        
-        if (resp.status === 404) {
-          alert(`Produkt-Variante '${variantId}' nicht gefunden. Bitte erstelle das Produkt in Medusa Admin.`);
-        } else {
-          alert(`Fehler beim Hinzufügen zum Warenkorb: ${resp.status}`);
-        }
-      } else {
-        const result = await resp.json();
-        console.log("Erfolgreich im Warenkorb:", result);
-        alert("Artikel wurde dem Warenkorb hinzugefügt!");
-      }
-    } catch (error) {
-      console.error("Error adding to cart:", error);
-      alert("Fehler beim Hinzufügen zum Warenkorb. Bitte versuchen Sie es erneut.");
-    } finally {
-      setIsAddingToCart(false);
+    if (totalBaseplates < 1 || totalBaseplates > 99) {
+      alert("Größe nicht unterstützt – bitte zwischen 1 und 99 Grundplatten bleiben.");
+      return;
     }
+
+    const matchingVariant = product.variants.find((v: { options?: { value?: string }[] }) => {
+      const value = v.options?.[0]?.value;
+      return value && parseInt(value) === totalBaseplates;
+    });
+
+    if (!matchingVariant) {
+      alert("Keine passende Produktvariante gefunden.");
+      return;
+    }
+
+    const unit_price = calculatePrice();
+
+    await addToCart({
+      variantId: matchingVariant.id,
+      quantity: 1,
+      countryCode: "DE",
+      metadata: {
+        width,
+        height,
+        baseplates: totalBaseplates,
+      },
+    });
+
+    alert("Produkt zum Warenkorb hinzugefügt.");
   };
 
   if (isBrickzMeClicked) {
@@ -1652,6 +1547,7 @@ export default function PersonalizeYourbrickzPage() {
                               onChange={(e) => handleAdjustmentChange(currentAdjustmentType, Number(e.target.value))}
                               className="flex-1"
                             />
+                            <span className="text-sm font-medium min-w-[3rem] text-center">{getCurrentAdjustmentValue()}</span>
                             <button
                               onClick={() => handleAdjustmentChange(currentAdjustmentType, Math.min(50, getCurrentAdjustmentValue() + 1))}
                               className="bg-gray-200 hover:bg-gray-300 text-gray-700 w-10 h-10 rounded flex items-center justify-center text-lg font-bold transition-colors"
@@ -1896,6 +1792,7 @@ export default function PersonalizeYourbrickzPage() {
                             onChange={(e) => handleAdjustmentChange(currentAdjustmentType, Number(e.target.value))}
                             className="flex-1"
                           />
+                          <span className="text-sm font-medium min-w-[3rem] text-center">{getCurrentAdjustmentValue()}</span>
                           <button
                             onClick={() => handleAdjustmentChange(currentAdjustmentType, Math.min(50, getCurrentAdjustmentValue() + 1))}
                             className="bg-gray-200 hover:bg-gray-300 text-gray-700 w-10 h-10 rounded flex items-center justify-center text-lg font-bold transition-colors"
