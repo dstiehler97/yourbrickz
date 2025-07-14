@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation"; // Für die Navigation zu einer neuen Seite
+// → Typen importieren, falls du sie hast
+// import type { StoreProduct } from "@medusajs/medusa";
 
 // oberhalb von `export default …`
 type YourbrickzColor = { id: string; yourbrickz_id: string; name: string; hex: string; rgb: number[] };
@@ -16,6 +18,9 @@ const COLOR_DISPLAY_ORDER = [
 ];
 
 export default function PersonalizeYourbrickzPage() {
+  // → STATE: Die automatisch geladene Variant-ID
+  const [variantId, setVariantId] = useState<string>("");
+
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [randomImages, setRandomImages] = useState<string[]>([]);
   const [allImages, setAllImages] = useState<string[]>([]);
@@ -129,6 +134,21 @@ export default function PersonalizeYourbrickzPage() {
     window.addEventListener("resize", handleResize);
 
     return () => window.removeEventListener("resize", handleResize); // Cleanup
+  }, []);
+
+  // ──────────────────────────────────────────────────────────
+  // 1) Produkt & Default-Variante aus der Store-API laden
+  useEffect(() => {
+    const loadProduct = async () => {
+      const res = await fetch("/store/products/personalize-yourbrickz");
+      if (!res.ok) return console.error("Produkt nicht gefunden");
+      const { product } = await res.json(); // → { product: StoreProduct }
+      // Wir nehmen die erste Variante
+      if (product.variants?.length) {
+        setVariantId(product.variants[0].id);
+      }
+    };
+    loadProduct();
   }, []);
 
   useEffect(() => {
@@ -878,53 +898,76 @@ export default function PersonalizeYourbrickzPage() {
     });
   };
 
-  // Add to cart function for Medusa v2
+  // ──────────────────────────────────────────────────────────
+  // Hilfsfunktion: zählt jede Farbe im Mosaik
+  const getColorUsageMap = (mosaic: string[][]): Record<string, number> => {
+    const usage: Record<string, number> = {};
+    mosaic.forEach(row =>
+      row.forEach(color => {
+        if (color !== "F") {
+          usage[color] = (usage[color] || 0) + 1;
+        }
+      })
+    );
+    return usage;
+  };
+
+  // ──────────────────────────────────────────────────────────
+  // addToCart-Funktion
   const handleAddToCart = async () => {
+    if (!variantId) return alert("Warte kurz, lade Variante…");
     if (!mosaicData.length || isAddingToCart) return;
 
     setIsAddingToCart(true);
 
     try {
-      // Generate product data
-      const productData = generateProductData();
-      const mosaicImage = await generateMosaicImage();
-
-      if (!productData) {
-        throw new Error('Could not generate product data');
+      // 1) Warenkorb-ID holen/initialisieren
+      let cartId = localStorage.getItem("yourbrickz_cart_id");
+      if (!cartId) {
+        const res = await fetch("/store/carts", { method: "POST" });
+        const { cart } = await res.json();
+        cartId = cart.id;
+        localStorage.setItem("yourbrickz_cart_id", cart.id);
       }
 
-      // Prepare cart item for Medusa v2
-      const cartItem = {
-        variant_id: "yourbrickz-custom-mosaic", // You'll need to create this variant in Medusa
-        quantity: 1,
-        metadata: {
-          // Store all the detailed information as metadata
-          mosaic_data: JSON.stringify(productData),
-          mosaic_image: mosaicImage,
-          custom_product: true,
-          product_type: "custom_mosaic"
-        }
+      // 2) Mosaik-Metriken berechnen
+      const bricks     = mosaicDimensions.width * mosaicDimensions.height;
+      const baseplates = Math.ceil(bricks / 256);
+      const circles    = bricks; // jede Zelle = ein Kreis
+      const priceCts   = Math.round(calculatePrice() * 100);
+      const colorUsage = getColorUsageMap(mosaicData);
+
+      // 3) Metadaten zusammenstellen (alle Werte als Strings)
+      const metadata = {
+        image_url     : selectedImage || "",
+        width         : String(mosaicDimensions.width),
+        height        : String(mosaicDimensions.height),
+        baseplates    : String(baseplates),
+        frame         : String(showBorder),
+        circles_count : String(circles),
+        color_usage   : JSON.stringify(colorUsage),
+        mosaic_matrix : JSON.stringify(mosaicData),
       };
 
-      // Add to Medusa cart
-      const response = await fetch('/api/cart/add', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(cartItem)
+      // 4) API-Call: Linie zum Warenkorb hinzufügen
+      const resp = await fetch(`/store/carts/${cartId}/line-items`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          variant_id: variantId,
+          quantity: 1,
+          unit_price: priceCts,
+          metadata,
+        }),
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to add item to cart');
+      if (!resp.ok) {
+        console.error("Fehler beim Hinzufügen:", await resp.text());
+        alert("Fehler beim Hinzufügen zum Warenkorb");
+      } else {
+        console.log("Erfolgreich im Warenkorb:", await resp.json());
+        alert("Artikel wurde dem Warenkorb hinzugefügt");
       }
-
-      // Show success message
-      alert('Ihr personalisiertes yourbrickz Mosaik wurde erfolgreich zum Warenkorb hinzugefügt!');
-      
-      // Optional: Redirect to cart
-      // router.push('/cart');
-
     } catch (error) {
       console.error('Error adding to cart:', error);
       alert('Fehler beim Hinzufügen zum Warenkorb. Bitte versuchen Sie es erneut.');
