@@ -1,9 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation"; // Für die Navigation zu einer neuen Seite
-import { addToCart, retrieveCart } from "@lib/data/cart";
-import { fetchProduct } from "@lib/data/product";
 
 // oberhalb von `export default …`
 type YourbrickzColor = { id: string; yourbrickz_id: string; name: string; hex: string; rgb: number[] };
@@ -57,19 +55,17 @@ export default function PersonalizeYourbrickzPage() {
   const getSortedColors = () => {
     if (mosaicData.length === 0) {
       // If no mosaic data, use default order
-      const colorMap = new Map(
-        yourbrickzColors.map((color: YourbrickzColor) => [parseInt(color.id), color])
-      );
+      const colorMap = new Map(yourbrickzColors.map(color => [parseInt(color.id), color]));
       return COLOR_DISPLAY_ORDER
-        .map((id) => colorMap.get(id))
-        .filter((color): color is YourbrickzColor => color !== undefined);
+        .map(id => colorMap.get(id))
+        .filter(color => color !== undefined) as YourbrickzColor[];
     }
 
     // Count color usage in mosaic
     const colorUsage = new Map<string, number>();
-    mosaicData.forEach((row: string[]) => {
-      row.forEach((color: string) => {
-        if (color !== "F") {
+    mosaicData.forEach(row => {
+      row.forEach(color => {
+        if (color !== "F") { // Ignore frame markers
           colorUsage.set(color, (colorUsage.get(color) || 0) + 1);
         }
       });
@@ -79,7 +75,7 @@ export default function PersonalizeYourbrickzPage() {
     const usedColors: YourbrickzColor[] = [];
     const unusedColors: YourbrickzColor[] = [];
 
-    yourbrickzColors.forEach((color: YourbrickzColor) => {
+    yourbrickzColors.forEach(color => {
       if (colorUsage.has(color.hex)) {
         usedColors.push(color);
       } else {
@@ -91,12 +87,10 @@ export default function PersonalizeYourbrickzPage() {
     usedColors.sort((a, b) => (colorUsage.get(b.hex) || 0) - (colorUsage.get(a.hex) || 0));
 
     // Sort unused colors by custom order
-    const colorMap = new Map(
-      yourbrickzColors.map((color: YourbrickzColor) => [parseInt(color.id), color])
-    );
+    const colorMap = new Map(yourbrickzColors.map(color => [parseInt(color.id), color]));
     const sortedUnusedColors = COLOR_DISPLAY_ORDER
-      .map((id) => colorMap.get(id))
-      .filter((color): color is YourbrickzColor => color !== undefined && !colorUsage.has(color.hex));
+      .map(id => colorMap.get(id))
+      .filter(color => color !== undefined && !colorUsage.has(color.hex)) as YourbrickzColor[];
 
     // Return used colors first, then unused colors
     return [...usedColors, ...sortedUnusedColors];
@@ -881,53 +875,62 @@ export default function PersonalizeYourbrickzPage() {
       // Convert to base64
       const base64Image = canvas.toDataURL('image/png', 0.9);
       resolve(base64Image);
-    };
+    });
   };
 
   // Add to cart function for Medusa v2
   const handleAddToCart = async () => {
-    const cart = await retrieveCart();
-    const product = { variants: [] }; // Replace with actual product fetching logic
+    if (!mosaicData.length || isAddingToCart) return;
 
-    if (!cart?.id || !product) {
-      alert("Cart or product not found.");
-      return;
+    setIsAddingToCart(true);
+
+    try {
+      // Generate product data
+      const productData = generateProductData();
+      const mosaicImage = await generateMosaicImage();
+
+      if (!productData) {
+        throw new Error('Could not generate product data');
+      }
+
+      // Prepare cart item for Medusa v2
+      const cartItem = {
+        variant_id: "yourbrickz-custom-mosaic", // You'll need to create this variant in Medusa
+        quantity: 1,
+        metadata: {
+          // Store all the detailed information as metadata
+          mosaic_data: JSON.stringify(productData),
+          mosaic_image: mosaicImage,
+          custom_product: true,
+          product_type: "custom_mosaic"
+        }
+      };
+
+      // Add to Medusa cart
+      const response = await fetch('/api/cart/add', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(cartItem)
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to add item to cart');
+      }
+
+      // Show success message
+      alert('Ihr personalisiertes yourbrickz Mosaik wurde erfolgreich zum Warenkorb hinzugefügt!');
+      
+      // Optional: Redirect to cart
+      // router.push('/cart');
+
+    } catch (error) {
+      console.error('Error adding to cart:', error);
+      alert('Fehler beim Hinzufügen zum Warenkorb. Bitte versuchen Sie es erneut.');
+    } finally {
+      setIsAddingToCart(false);
     }
-
-    const { width, height } = mosaicDimensions;
-    const platesX = Math.ceil(width / 16);
-    const platesY = Math.ceil(height / 16);
-    const totalBaseplates = platesX * platesY;
-
-    if (totalBaseplates < 1 || totalBaseplates > 99) {
-      alert("Größe nicht unterstützt – bitte zwischen 1 und 99 Grundplatten bleiben.");
-      return;
-    }
-
-    const matchingVariant = product.variants.find((v: { options?: { value?: string }[] }) => {
-      const value = v.options?.[0]?.value;
-      return value && parseInt(value) === totalBaseplates;
-    });
-
-    if (!matchingVariant) {
-      alert("Keine passende Produktvariante gefunden.");
-      return;
-    }
-
-    const unit_price = calculatePrice();
-
-    await addToCart({
-      variantId: matchingVariant.id,
-      quantity: 1,
-      countryCode: "DE",
-      metadata: {
-        width,
-        height,
-        baseplates: totalBaseplates,
-      },
-    });
-
-    alert("Produkt zum Warenkorb hinzugefügt.");
   };
 
   if (isBrickzMeClicked) {
@@ -1758,6 +1761,7 @@ export default function PersonalizeYourbrickzPage() {
                           className="py-2 px-3 bg-gray-100 hover:bg-gray-200 rounded text-sm font-medium transition-colors"
                         >
                           Kontrast
+                       
                         </button>
                         <button
                           onClick={() => handleAdjustmentSelection('saturation')}
