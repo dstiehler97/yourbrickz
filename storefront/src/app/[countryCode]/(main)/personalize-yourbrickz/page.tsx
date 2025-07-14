@@ -921,7 +921,7 @@ export default function PersonalizeYourbrickzPage() {
       // Convert to base64
       const base64Image = canvas.toDataURL('image/png', 0.9);
       resolve(base64Image);
-    });
+    };
   };
 
   // ──────────────────────────────────────────────────────────
@@ -953,7 +953,7 @@ export default function PersonalizeYourbrickzPage() {
       // 1) Warenkorb-ID holen/initialisieren
       let cartId = localStorage.getItem("yourbrickz_cart_id");
       if (!cartId) {
-        const res = await fetch("/store/carts", { method: "POST" });
+        const res = await fetch(`${process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL}/store/carts`, { method: "POST" });
         if (!res.ok) {
           throw new Error("Konnte keinen Warenkorb erstellen");
         }
@@ -963,33 +963,45 @@ export default function PersonalizeYourbrickzPage() {
       }
 
       // 2) Mosaik-Metriken berechnen
-      const bricks     = mosaicDimensions.width * mosaicDimensions.height;
-      const baseplates = Math.ceil(bricks / 256);
-      const circles    = bricks; // jede Zelle = ein Kreis
-      const priceCts   = Math.round(calculatePrice() * 100);
+      const bricks = mosaicDimensions.width * mosaicDimensions.height;
+      const baseplates = Math.ceil(bricks / 256); // Anzahl der Grundplatten
+      const priceCts = Math.round(calculatePrice() * 100);
       const colorUsage = getColorUsageMap(mosaicData);
+
+      // Dynamische Auswahl der Option basierend auf der Anzahl der Grundplatten
+      const selectedOptionValue = baseplates.toString(); // Option-Wert entspricht der Anzahl der Grundplatten
+      const selectedOption = yourbrickzPrices.options.find(
+        (option: any) => option.values.some((value: any) => value.value === selectedOptionValue)
+      );
+
+      if (!selectedOption) {
+        throw new Error(`Keine passende Option für ${baseplates} Grundplatten gefunden.`);
+      }
+
+      const selectedOptionId = selectedOption.id;
 
       // 3) Metadaten zusammenstellen (alle Werte als Strings)
       const metadata = {
-        image_url     : selectedImage || "",
-        width         : String(mosaicDimensions.width),
-        height        : String(mosaicDimensions.height),
-        baseplates    : String(baseplates),
-        frame         : String(showBorder),
-        circles_count : String(circles),
-        color_usage   : JSON.stringify(colorUsage),
-        mosaic_matrix : JSON.stringify(mosaicData),
+        image_url: selectedImage || "",
+        width: String(mosaicDimensions.width),
+        height: String(mosaicDimensions.height),
+        baseplates: String(baseplates),
+        frame: String(showBorder),
+        circles_count: String(bricks),
+        color_usage: JSON.stringify(colorUsage),
+        mosaic_matrix: JSON.stringify(mosaicData),
       };
 
       console.log("Versuche Artikel hinzuzufügen:", {
         variant_id: variantId,
         quantity: 1,
         unit_price: priceCts,
-        metadata
+        metadata,
+        selected_option_id: selectedOptionId,
       });
 
       // 4) API-Call: Linie zum Warenkorb hinzufügen
-      const resp = await fetch(`/store/carts/${cartId}/line-items`, {
+      const resp = await fetch(`${process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL}/store/carts/${cartId}/line-items`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -997,6 +1009,7 @@ export default function PersonalizeYourbrickzPage() {
           quantity: 1,
           unit_price: priceCts,
           metadata,
+          selected_option_id: selectedOptionId,
         }),
       });
 
@@ -1015,8 +1028,8 @@ export default function PersonalizeYourbrickzPage() {
         alert("Artikel wurde dem Warenkorb hinzugefügt!");
       }
     } catch (error) {
-      console.error('Error adding to cart:', error);
-      alert('Fehler beim Hinzufügen zum Warenkorb. Bitte versuchen Sie es erneut.');
+      console.error("Error adding to cart:", error);
+      alert("Fehler beim Hinzufügen zum Warenkorb. Bitte versuchen Sie es erneut.");
     } finally {
       setIsAddingToCart(false);
     }
@@ -1639,7 +1652,6 @@ export default function PersonalizeYourbrickzPage() {
                               onChange={(e) => handleAdjustmentChange(currentAdjustmentType, Number(e.target.value))}
                               className="flex-1"
                             />
-                            <span className="text-sm font-medium min-w-[3rem] text-center">{getCurrentAdjustmentValue()}</span>
                             <button
                               onClick={() => handleAdjustmentChange(currentAdjustmentType, Math.min(50, getCurrentAdjustmentValue() + 1))}
                               className="bg-gray-200 hover:bg-gray-300 text-gray-700 w-10 h-10 rounded flex items-center justify-center text-lg font-bold transition-colors"
@@ -1850,7 +1862,6 @@ export default function PersonalizeYourbrickzPage() {
                           className="py-2 px-3 bg-gray-100 hover:bg-gray-200 rounded text-sm font-medium transition-colors"
                         >
                           Kontrast
-                       
                         </button>
                         <button
                           onClick={() => handleAdjustmentSelection('saturation')}
@@ -1885,7 +1896,6 @@ export default function PersonalizeYourbrickzPage() {
                             onChange={(e) => handleAdjustmentChange(currentAdjustmentType, Number(e.target.value))}
                             className="flex-1"
                           />
-                          <span className="text-sm font-medium min-w-[3rem] text-center">{getCurrentAdjustmentValue()}</span>
                           <button
                             onClick={() => handleAdjustmentChange(currentAdjustmentType, Math.min(50, getCurrentAdjustmentValue() + 1))}
                             className="bg-gray-200 hover:bg-gray-300 text-gray-700 w-10 h-10 rounded flex items-center justify-center text-lg font-bold transition-colors"
