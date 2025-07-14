@@ -140,12 +140,38 @@ export default function PersonalizeYourbrickzPage() {
   // 1) Produkt & Default-Variante aus der Store-API laden
   useEffect(() => {
     const loadProduct = async () => {
-      const res = await fetch("/store/products/personalize-yourbrickz");
-      if (!res.ok) return console.error("Produkt nicht gefunden");
-      const { product } = await res.json(); // → { product: StoreProduct }
-      // Wir nehmen die erste Variante
-      if (product.variants?.length) {
-        setVariantId(product.variants[0].id);
+      try {
+        // Verwende die tatsächliche Produkt-ID aus dem Screenshot
+        const res = await fetch("/store/products/prod_01JEKTFQ588ZZT2HTM8WPY7CET");
+        if (!res.ok) {
+          console.warn("Produkt nicht gefunden, versuche mit Handle...");
+          // Fallback: versuche mit Handle
+          const handleRes = await fetch("/store/products/personalize-yourbrickz");
+          if (!handleRes.ok) {
+            console.error("Produkt auch mit Handle nicht gefunden");
+            setVariantId("variant_prod_01JEKTFQ58ZZT2HTM8WPY7CET"); // Direkte Variante-ID aus Screenshot
+            return;
+          }
+          const { product: handleProduct } = await handleRes.json();
+          if (handleProduct.variants?.length) {
+            setVariantId(handleProduct.variants[0].id);
+            console.log("Produkt über Handle geladen, Variante-ID:", handleProduct.variants[0].id);
+          }
+          return;
+        }
+        const { product } = await res.json();
+        // Wir nehmen die erste Variante
+        if (product.variants?.length) {
+          setVariantId(product.variants[0].id);
+          console.log("Produkt geladen, Variante-ID:", product.variants[0].id);
+        } else {
+          // Fallback zur bekannten Variante-ID
+          setVariantId("variant_prod_01JEKTFQ58ZZT2HTM8WPY7CET");
+        }
+      } catch (error) {
+        console.error("Fehler beim Laden des Produkts:", error);
+        // Fallback zur bekannten Variante-ID aus dem Screenshot
+        setVariantId("variant_prod_01JEKTFQ58ZZT2HTM8WPY7CET");
       }
     };
     loadProduct();
@@ -915,7 +941,10 @@ export default function PersonalizeYourbrickzPage() {
   // ──────────────────────────────────────────────────────────
   // addToCart-Funktion
   const handleAddToCart = async () => {
-    if (!variantId) return alert("Warte kurz, lade Variante…");
+    if (!variantId) {
+      alert("Warte kurz, lade Variante… Oder erstelle zuerst das Produkt 'personalize-yourbrickz' in Medusa Admin.");
+      return;
+    }
     if (!mosaicData.length || isAddingToCart) return;
 
     setIsAddingToCart(true);
@@ -925,6 +954,9 @@ export default function PersonalizeYourbrickzPage() {
       let cartId = localStorage.getItem("yourbrickz_cart_id");
       if (!cartId) {
         const res = await fetch("/store/carts", { method: "POST" });
+        if (!res.ok) {
+          throw new Error("Konnte keinen Warenkorb erstellen");
+        }
         const { cart } = await res.json();
         cartId = cart.id;
         localStorage.setItem("yourbrickz_cart_id", cart.id);
@@ -949,6 +981,13 @@ export default function PersonalizeYourbrickzPage() {
         mosaic_matrix : JSON.stringify(mosaicData),
       };
 
+      console.log("Versuche Artikel hinzuzufügen:", {
+        variant_id: variantId,
+        quantity: 1,
+        unit_price: priceCts,
+        metadata
+      });
+
       // 4) API-Call: Linie zum Warenkorb hinzufügen
       const resp = await fetch(`/store/carts/${cartId}/line-items`, {
         method: "POST",
@@ -962,11 +1001,18 @@ export default function PersonalizeYourbrickzPage() {
       });
 
       if (!resp.ok) {
-        console.error("Fehler beim Hinzufügen:", await resp.text());
-        alert("Fehler beim Hinzufügen zum Warenkorb");
+        const errorText = await resp.text();
+        console.error("Fehler beim Hinzufügen:", errorText);
+        
+        if (resp.status === 404) {
+          alert(`Produkt-Variante '${variantId}' nicht gefunden. Bitte erstelle das Produkt in Medusa Admin.`);
+        } else {
+          alert(`Fehler beim Hinzufügen zum Warenkorb: ${resp.status}`);
+        }
       } else {
-        console.log("Erfolgreich im Warenkorb:", await resp.json());
-        alert("Artikel wurde dem Warenkorb hinzugefügt");
+        const result = await resp.json();
+        console.log("Erfolgreich im Warenkorb:", result);
+        alert("Artikel wurde dem Warenkorb hinzugefügt!");
       }
     } catch (error) {
       console.error('Error adding to cart:', error);
